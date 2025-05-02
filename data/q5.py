@@ -1,36 +1,34 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import f1_score
 
-# Paths & ensure outputs folder
+#  Setup paths
 base = Path(__file__).parent
 out = base / "outputs"
 out.mkdir(exist_ok=True)
 
-# Load & parse FlightDate
+#  Load & parse
 df = pd.read_csv(
     base / "airline_2m.csv",
     encoding="latin1",
     parse_dates=["FlightDate"],
     low_memory=False
-).rename(columns={"FlightDate": "FL_DATE"})
+)
 
-# Drop all 'Div*' columns and truly empty columns
-div_cols = [c for c in df.columns if c.startswith("Div")]
-df = df.drop(columns=div_cols)
-empty = [c for c in df.columns if df[c].notna().sum() == 0]
-if empty:
-    df = df.drop(columns=empty)
+#  Drop diversion and empty columns
+df.drop(columns=[c for c in df if c.startswith("Div")], inplace=True)
+empty = [c for c in df if df[c].notna().sum() == 0]
+df.drop(columns=empty, inplace=True)
 
-# Build flight_key and count occurrences
+# Group by flight_key for count feature
 df["flight_key"] = (
         df["Reporting_Airline"] + "_" +
         df["Origin"] + "_" +
@@ -39,66 +37,63 @@ df["flight_key"] = (
 )
 df["flight_count"] = df.groupby("flight_key")["flight_key"].transform("count")
 
-# Create the delay-flag and drop raw columns
+#  Create delay flag & drop raw columns
 df["delay15"] = (df["ArrDelayMinutes"] > 15).astype(int)
-df = df.drop(columns=[
-    "ArrTime", "DepTime",
-    "ArrDelay", "DepDelay",
-    "ArrDelayMinutes", "DepDelayMinutes",
-    "CRSArrTime", "CRSDepTime",
+df.drop(columns=[
+    "FlightDate","ArrTime","DepTime",
+    "ArrDelay","DepDelay",
+    "ArrDelayMinutes","DepDelayMinutes",
+    "CRSArrTime","CRSDepTime",
     "flight_key"
-])
+], inplace=True)
 
-# Prepare features & target
-X = df.drop(columns=["FL_DATE", "delay15"])
+#  Features & target
+X = df.drop(columns=["delay15"])
 y = df["delay15"]
 
-# Train/test split (stratified)
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y,
-    test_size=0.2,
-    random_state=42,
-    stratify=y
-)
-
-# Preprocessing pipeline
-num_cols = X_train.select_dtypes(include="number").columns.tolist()
-cat_cols = X_train.select_dtypes(include="object").columns.tolist()
-preprocessor = ColumnTransformer([
+#  Preprocessing
+num_cols = X.select_dtypes(include="number").columns.tolist()
+cat_cols = X.select_dtypes(include="object").columns.tolist()
+pre = ColumnTransformer([
     ("num", SimpleImputer(strategy="median"), num_cols),
     ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
 ])
 
-# Define model pipelines (SVM vs. Decision Tree)
+#  Define models
 models = {
     "LinearSVM": Pipeline([
-        ("pre", preprocessor),
+        ("pre", pre),
         ("scale", StandardScaler(with_mean=False)),
         ("clf", LinearSVC(max_iter=5000, random_state=42))
     ]),
     "DecisionTree": Pipeline([
-        ("pre", preprocessor),
+        ("pre", pre),
         ("clf", DecisionTreeClassifier(max_depth=10, random_state=42))
     ])
 }
 
-# Train each model, predict, and evaluate on test set
-scores = {}
+#  5-fold CV
+means, stds = {}, {}
 for name, pipe in models.items():
-    pipe.fit(X_train, y_train)
-    preds = pipe.predict(X_test)
-    f1 = f1_score(y_test, preds)
-    scores[name] = f1
-    print(f"{name} test F1-score: {f1:.3f}")
+    scores = cross_val_score(pipe, X, y, cv=5, scoring="f1", n_jobs=1)
+    means[name] = scores.mean()
+    stds[name] = scores.std()
+    print(f"{name} CV F1: {means[name]:.3f} ± {stds[name]:.3f}")
 
-# Plot comparison
-plt.figure(figsize=(6, 4))
-plt.bar(scores.keys(), scores.values(), color=["#4c72b0", "#dd8452"])
-plt.ylim(0, 1)
-plt.ylabel("Test F1-score")
-plt.title("Delay>15 min Classification: SVM vs. Decision Tree")
-for i, (n, v) in enumerate(scores.items()):
-    plt.text(i, v + 0.02, f"{v:.2f}", ha="center")
+#  Plot results
+names = list(models.keys())
+x = np.arange(len(names))
+y_vals = [means[n] for n in names]
+y_err = [stds[n] for n in names]
+
+plt.figure(figsize=(6,4))
+plt.bar(x, y_vals, yerr=y_err, capsize=5)
+plt.xticks(x, names)
+plt.ylim(0,1)
+plt.ylabel("CV F1-score")
+plt.title("Q5: Delay>15 min Classification\n5-Fold CV Comparison")
+for i, v in enumerate(y_vals):
+    plt.text(i, v+0.02, f"{v:.2f}", ha="center")
 plt.tight_layout()
 plt.savefig(out / "q5_test_comparison.png")
 print("Saved plot to", out / "q5_test_comparison.png")
