@@ -46,10 +46,24 @@ print("✅ Yearly delay trend plotted.")
 # STEP 3: Average delay per airport per year
 print("📦 Calculating airport-level yearly delays...")
 airport_yearly = df.groupby(["Origin", "year"])["DepDelay"].mean().reset_index()
+print("📈 Plotting airport-level delay trends...")
 
-# OPTIONAL: Save this table
-airport_yearly.to_csv("airport_delay_trends.csv", index=False)
-print("📁 Airport delay trends saved to CSV.")
+# Plotting trends for top 5 busiest airports
+top_airports = df["Origin"].value_counts().head(5).index.tolist()
+plt.figure(figsize=(10, 6))
+
+for airport in top_airports:
+    data = airport_yearly[airport_yearly["Origin"] == airport]
+    sns.lineplot(data=data, x="year", y="DepDelay", label=airport, marker="o")
+
+plt.title("Average Departure Delay Over the Years (Top 5 Airports)")
+plt.xlabel("Year")
+plt.ylabel("Avg Departure Delay (minutes)")
+plt.grid(True)
+plt.legend(title="Airport")
+plt.tight_layout()
+plt.show()
+print("✅ Airport-level delay plot displayed.")
 
 # ---------------------------------------------
 # STEP 4: Identify improvement or decline per airport
