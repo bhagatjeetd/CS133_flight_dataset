@@ -1,4 +1,3 @@
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -66,6 +65,7 @@ plt.show()
 print("✅ Airport-level delay plot displayed.")
 
 # ---------------------------------------------
+# ---------------------------------------------
 # STEP 4: Identify improvement or decline per airport
 print("📈 Analyzing improvement/decline in performance...")
 
@@ -81,30 +81,56 @@ pivoted = pivoted.dropna(subset=[first_year, last_year])
 pivoted["change"] = pivoted[last_year] - pivoted[first_year]
 
 # Sort to find top improvements and declines
-most_improved = pivoted.sort_values("change").head(10)
-most_declined = pivoted.sort_values("change", ascending=False).head(10)
+most_improved = pivoted.sort_values("change").head(6)  # top 6 to exclude SCK
+most_improved = most_improved[~most_improved.index.isin(["SCK"])].head(5)  # drop SCK
+most_declined = pivoted.sort_values("change", ascending=False).head(5)     # top 5 worst
 
 # Print results
-print("\n🟢 Top 10 Most Improved Airports (delays reduced):")
+print("\n🟢 Top 5 Most Improved Airports (delays reduced):")
 print(most_improved[["change"]])
 
-print("\n🔴 Top 10 Most Declined Airports (delays increased):")
+print("\n🔴 Top 5 Most Declined Airports (delays increased):")
 print(most_declined[["change"]])
 print("✅ Improvement/decline analysis done.")
 
 # ---------------------------------------------
-# STEP 5: Plot example airport trends
-print("📊 Plotting trends for top changing airports...")
-top_airports = most_improved.index.tolist() + most_declined.index.tolist()
-filtered = airport_yearly[airport_yearly["Origin"].isin(top_airports)]
+# STEP 5: Plot updated trends for 5 airports
+print("📊 Plotting updated relative improvement for top 5 improved airports...")
+
+# Recalculate DelayChange with same logic
+baseline = airport_yearly.groupby("Origin")["year"].min().reset_index()
+baseline_delays = airport_yearly.merge(baseline, on=["Origin", "year"], suffixes=("", "_baseline"))
+baseline_delays = baseline_delays[["Origin", "DepDelay"]].rename(columns={"DepDelay": "BaselineDelay"})
+airport_yearly = airport_yearly.merge(baseline_delays, on="Origin")
+airport_yearly["DelayChange"] = airport_yearly["BaselineDelay"] - airport_yearly["DepDelay"]
+
+# Plot for improved airports
+improved_airports = most_improved.index.tolist()
+improved_data = airport_yearly[airport_yearly["Origin"].isin(improved_airports)]
 
 plt.figure(figsize=(12, 6))
-sns.lineplot(data=filtered, x="year", y="DepDelay", hue="Origin", marker="o")
-plt.title("Delay Trends at Top Changing Airports")
-plt.ylabel("Avg Departure Delay (minutes)")
+sns.lineplot(data=improved_data, x="year", y="DelayChange", hue="Origin", marker="o")
+plt.title("Improvement in Departure Delay (Higher = Better)")
+plt.ylabel("Improvement from Baseline Delay (minutes)")
 plt.xlabel("Year")
+plt.axhline(0, color="black", linestyle="--")
 plt.grid(True)
 plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.tight_layout()
 plt.show()
-print("✅ Airport trend plot complete.")
+
+# Plot for declined airports
+print("📉 Now plotting updated relative worsening for top 5 declined airports...")
+declined_airports = most_declined.index.tolist()
+declined_data = airport_yearly[airport_yearly["Origin"].isin(declined_airports)]
+
+plt.figure(figsize=(12, 6))
+sns.lineplot(data=declined_data, x="year", y="DelayChange", hue="Origin", marker="o")
+plt.title("Worsening in Departure Delay (Lower = Worse)")
+plt.ylabel("Change from Baseline Delay (minutes)")
+plt.xlabel("Year")
+plt.axhline(0, color="black", linestyle="--")
+plt.grid(True)
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
