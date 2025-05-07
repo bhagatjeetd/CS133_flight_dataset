@@ -15,7 +15,6 @@ df = df[["FlightDate", "Origin", "DepDelay"]]
 # Drop rows with missing delay info
 df = df.dropna(subset=["DepDelay"])
 
-# Optional: remove extreme delay values
 df = df[(df["DepDelay"] > -60) & (df["DepDelay"] < 1000)]
 
 # Clean airport codes
